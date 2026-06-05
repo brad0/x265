@@ -76,14 +76,22 @@ elseif(POWERMATCH GREATER "-1")
         message(STATUS "Detected POWER PPC64 target processor")
     endif()
 elseif(ARMMATCH GREATER "-1")
-    if(CROSS_COMPILE_ARM)
-        message(STATUS "Cross compiling for ARM arch")
-    else()
-        set(CROSS_COMPILE_ARM 0)
-    endif()
-	message(STATUS "Detected ARM target processor")
+    message(STATUS "Detected ARM target processor")
     set(ARM 1)
     add_definitions(-DX265_ARCH_ARM=1 -DHAVE_ARMV6=1)
+
+    option(ARM_RUNTIME_CPU_DETECT "Enable ARM run-time CPU feature detection" ON)
+    if(NOT CMAKE_SYSTEM_NAME MATCHES "Linux|FreeBSD|OpenBSD")
+      set(ARM_RUNTIME_CPU_DETECT OFF CACHE BOOL "" FORCE)
+      message(STATUS "Run-time CPU feature detection unsupported on this platform")
+    endif()
+
+    # Options for manually enabling/disabling ARM SIMD.
+    option(ENABLE_NEON "Enable Neon" ON)
+
+    # Compiler flags for ARM.
+    set(ARM_NEON_FLAG "-march=armv8-a")
+
 elseif(ARM64MATCH GREATER "-1")
     message(STATUS "Detected ARM64 target processor")
     set(ARM64 1)
@@ -307,11 +315,36 @@ if(GCC)
             endif()
         endif()
     endif()
+    if(ARM)
+        if (ARM_RUNTIME_CPU_DETECT)
+            add_definitions(-DARM_RUNTIME_CPU_DETECT=1)
+            message(STATUS "Configuring build for run-time CPU feature detection")
+        endif()
+
+        if(ARM_RUNTIME_CPU_DETECT OR CROSS_COMPILE_ARM)
+            # Add all extensions when compiling for run-time CPU feature detection or cross compiling.
+            set(CPU_HAS_NEON 1)
+        else()
+            if(CMAKE_SYSTEM_NAME MATCHES "Linux|Darwin")
+                find_package(Neon)
+
+            else()
+                message(STATUS "Compile-time CPU feature detection unsupported on this platform")
+            endif()
+        endif()
+
+
+        if(CPU_HAS_NEON)
+           message(STATUS "Found Neon")
+           add_definitions(-DHAVE_NEON)
+        endif()
+
+
+
     if(ARM AND CROSS_COMPILE_ARM)
-        message(STATUS "cross compile arm")
+
 		set(ARM_ARGS -march=armv6 -mfloat-abi=soft -mfpu=vfp -marm -fPIC)
     elseif(ARM)
-        find_package(Neon)
         if(CPU_HAS_NEON)
             set(ARM_ARGS -mcpu=native -mfloat-abi=hard -mfpu=neon -marm -fPIC)
             add_definitions(-DHAVE_NEON)
@@ -319,6 +352,10 @@ if(GCC)
             set(ARM_ARGS -mcpu=native -mfloat-abi=hard -mfpu=vfp -marm)
         endif()
     endif()
+
+
+    endif()
+
     if(ARM64)
         set(CPU_HAS_NEON 1)
 
